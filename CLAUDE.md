@@ -6,6 +6,7 @@
 - One PR per fix/feature, with a description that covers: root cause, fix, verification.
 - After opening a PR: subscribe to its activity, and if a check has to wait on CI or review, schedule a check-in (~1h) rather than polling.
 - Once merged: unsubscribe, `git fetch origin main` and reset the working branch before starting the next change.
+- After resetting the working branch to `origin/main`, immediately re-sign its tip: PR merges made through the GitHub API produce a merge commit committed by `GitHub <noreply@github.com>`, which the local stop hook flags as unverified. Fix it right away with `git config user.email noreply@anthropic.com && git config user.name Claude && git commit --amend --no-edit --reset-author`, rather than waiting for the hook to complain. This only rewrites the local/pushed feature branch tip, never `main`.
 - Resolve review threads once addressed.
 
 ## Testing discipline (the most important part)
