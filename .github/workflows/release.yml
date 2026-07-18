@@ -1,47 +1,59 @@
-name: Release Obsidian plugin
+name: Build obsidian plugin
 
+# Triggers when a release is published on GitHub (via the "Publish release"
+# button, whether the tag already existed or was created in that same step).
+# "release: published" is the event GitHub guarantees fires when a release
+# is published, regardless of how the tag was created -- "push: tags" is
+# unreliable for tags created through the release-publish UI flow.
 on:
-  push:
-    tags:
-      - "*"
+  release:
+    types: [published]
+
+# contents:write is needed to upload assets to the release; GITHUB_TOKEN
+# defaults to read-only on newer repos. attestations:write and id-token:write
+# are needed to sign build provenance attestations for the release assets
+# (lets users verify main.js/manifest.json/styles.css were actually built
+# from this repo by this workflow, not tampered with after the fact).
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Type check
-        run: npx tsc -noEmit -skipLibCheck
-
-      - name: Build plugin
-        run: npm run build
-
-      - name: Verify manifest version matches tag
+          ref: ${{ github.event.release.tag_name }}
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+      - name: Build
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          manifest_version=$(node -p "require('./manifest.json').version")
-          if [ "$tag" != "$manifest_version" ]; then
-            echo "Tag ($tag) does not match manifest.json version ($manifest_version)"
-            exit 1
-          fi
-
-      - name: Create draft release
+          npm ci
+          npm run build --if-present
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+      - name: Upload release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" \
-            --title "$tag" \
-            --draft \
-            --generate-notes \
-            main.js manifest.json styles.css
+          # Only main.js/manifest.json/styles.css: Obsidian only ever
+          # downloads these directly from the release, and a zip on top is
+          # flagged by Obsidian's plugin review as an unsupported extra file.
+          assets=(main.js manifest.json)
+          # styles.css doesn't exist on every historical tag; only upload it
+          # if the checked-out ref actually has one.
+          if [ -f styles.css ]; then
+            assets+=(styles.css)
+          fi
+          gh release upload "${{ github.event.release.tag_name }}" "${assets[@]}" --clobber
