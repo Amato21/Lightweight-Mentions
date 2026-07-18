@@ -1,0 +1,11 @@
+.lightweight-mentions-suggestion {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.lightweight-mentions-tag {
+	font-size: 0.75em;
+	opacity: 0.6;
+}
