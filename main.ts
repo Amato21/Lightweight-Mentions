@@ -44,13 +44,26 @@ export interface RankedCandidate<T> {
 	score: number;
 }
 
+/** Splits a label into "words" on anything that isn't a letter or digit (in any
+ * script/language), so "Fluorite Eye's Song - Vivy" becomes ["fluorite", "eye",
+ * "s", "song", "vivy"]. Used to require a query to start an actual word, not
+ * just appear as a substring anywhere -- "test" shouldn't count as a strong
+ * match against "Fatestrange Fake" just because it's hiding mid-word. */
+function wordsOf(label: string): string[] {
+	return label.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
 /**
  * Ranks candidates by how well their label matches the query: exact match, then
- * "starts with", then "contains", and only as a last resort a fuzzy subsequence
- * match (which can match letters scattered anywhere in an unrelated label, e.g.
- * querying "Vivien" fuzzy-matching "Vivy - Fluorite Eye's Song"). Without these
- * tiers, fuzzy noise could rank above -- or bury -- an actually relevant match
- * on a large vault.
+ * "starts with", then "a word in the label starts with the query", and only as
+ * a last resort a fuzzy subsequence match (which can match letters scattered
+ * anywhere in an unrelated label, e.g. querying "Vivien" fuzzy-matching "Vivy -
+ * Fluorite Eye's Song"). Plain "contains anywhere" is deliberately excluded: on
+ * a large vault it lets a query hiding mid-word inside an unrelated title (e.g.
+ * "test" inside "Fatestrange Fake") count as a strong match, which then buries
+ * the "create new" suggestion behind a pile of irrelevant results. When no
+ * candidate reaches a strong tier, fuzzy fallback matches are returned on their
+ * own (not mixed in alongside strong matches) so they don't dilute a good list.
  */
 export function rankCandidates<T>(
 	candidates: { item: T; label: string }[],
@@ -62,23 +75,29 @@ export function rankCandidates<T>(
 	}
 
 	const lowerQuery = query.toLowerCase();
-	const ranked: RankedCandidate<T>[] = [];
+	const strong: RankedCandidate<T>[] = [];
+	const fuzzyFallback: RankedCandidate<T>[] = [];
 	for (const c of candidates) {
 		const lowerLabel = c.label.toLowerCase();
 		if (lowerLabel === lowerQuery) {
-			ranked.push({ item: c.item, tier: 3, score: 0 });
+			strong.push({ item: c.item, tier: 3, score: 0 });
 		} else if (lowerLabel.startsWith(lowerQuery)) {
-			ranked.push({ item: c.item, tier: 2, score: -c.label.length });
-		} else if (lowerLabel.includes(lowerQuery)) {
-			ranked.push({ item: c.item, tier: 1, score: -c.label.length });
+			strong.push({ item: c.item, tier: 2, score: -c.label.length });
+		} else if (wordsOf(c.label).some((word) => word.startsWith(lowerQuery))) {
+			strong.push({ item: c.item, tier: 1, score: -c.label.length });
 		} else {
 			const result = fuzzyMatch(c.label);
-			if (result) ranked.push({ item: c.item, tier: 0, score: result.score });
+			if (result) fuzzyFallback.push({ item: c.item, tier: 0, score: result.score });
 		}
 	}
 
-	ranked.sort((a, b) => (b.tier !== a.tier ? b.tier - a.tier : b.score - a.score));
-	return ranked;
+	if (strong.length > 0) {
+		strong.sort((a, b) => (b.tier !== a.tier ? b.tier - a.tier : b.score - a.score));
+		return strong;
+	}
+
+	fuzzyFallback.sort((a, b) => b.score - a.score);
+	return fuzzyFallback;
 }
 
 export function hasStrongMatch<T>(ranked: RankedCandidate<T>[]): boolean {

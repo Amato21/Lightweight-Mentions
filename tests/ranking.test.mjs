@@ -112,6 +112,37 @@ test("an exact match beats a prefix match", () => {
 	assert.equal(ranked[0].tier, 3);
 });
 
+test("a query hiding mid-word in an unrelated title is not a strong match", () => {
+	// Reported bug: querying "test" on a real vault surfaced "Fatestrange Fake"
+	// (Fate/strange Fake) as if it were a real match, because "test" is a
+	// literal (but coincidental) substring of "Fa-test-range". It shouldn't
+	// count as "strong" just for containing the query mid-word.
+	const candidates = [{ item: "fatestrange", label: "Fatestrange Fake" }];
+	const ranked = rankCandidates(candidates, "test", subsequenceFuzzy("test"));
+
+	assert.equal(hasStrongMatch(ranked), false, "a mid-word substring must not count as a strong match");
+});
+
+test("strong matches are never diluted with fuzzy noise", () => {
+	// When at least one real match exists, weaker fuzzy-only matches (like the
+	// "Fatestrange" false positive) must not also flood the result list.
+	const candidates = [
+		{ item: "real", label: "Test Plan" },
+		{ item: "noise", label: "Fatestrange Fake" },
+	];
+	const ranked = rankCandidates(candidates, "test", subsequenceFuzzy("test"));
+
+	assert.equal(ranked.length, 1, "the noisy fuzzy match must not be mixed in alongside a real match");
+	assert.equal(ranked[0].item, "real");
+});
+
+test("a query matching the start of any word in the label is a strong match", () => {
+	const candidates = [{ item: "song", label: "Fluorite Eye's Song - Vivy" }];
+	const ranked = rankCandidates(candidates, "Vivy", subsequenceFuzzy("Vivy"));
+
+	assert.equal(hasStrongMatch(ranked), true, "\"Vivy\" starts the last word of the label");
+});
+
 test("empty query returns all candidates unranked (tier 1, stable order)", () => {
 	const candidates = [
 		{ item: "a", label: "Alpha" },
