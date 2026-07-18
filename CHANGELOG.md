@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.2.0] - 2026-07-18
 
 ### Fixed
 - On large vaults, the mention suggester could rank an unrelated note above (or
@@ -15,6 +15,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   "contains", with fuzzy matching only as a last-resort fallback -- and when
   nothing solid matches, "Create ..." is now offered first instead of being
   buried at the end of the list.
+- A fire-and-forget promise, an unsafe `any` assignment on settings load, and
+  an `EditorSuggest.selectSuggestion` override returning a `Promise` where the
+  base class expects `void` -- all flagged by the Obsidian plugin review bot.
+- Swapped the third-party `builtin-modules` package for Node's own
+  `module.builtinModules`.
+
+### Added
+- `tests/ranking.test.mjs`: a regression test for the ranking fix above, run
+  via `npm test`.
 
 ## [0.1.0] - 2026-07-18
 
