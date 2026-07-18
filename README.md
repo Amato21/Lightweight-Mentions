@@ -68,6 +68,16 @@ Go to **Settings → Lightweight Mentions**:
 
 ---
 
+## Data access
+
+To power the mention suggester, this plugin reads the list of every markdown
+file in your vault (file names, not their content) plus the headings of the
+stub file, on every keystroke while the suggester is open. It never reads any
+other file's content, and nothing ever leaves your vault — no network
+requests are made.
+
+---
+
 ## Known limitations (v0.1.0)
 
 - One global stub file — no per-topic/per-folder stub files yet.
