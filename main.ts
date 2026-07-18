@@ -60,7 +60,7 @@ export default class LightweightMentionsPlugin extends Plugin {
 			id: "promote-mention-to-note",
 			name: "Promote mention to full note",
 			editorCallback: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
-				if (ctx.file) this.promoteMentionAtCursor(editor, ctx.file);
+				if (ctx.file) void this.promoteMentionAtCursor(editor, ctx.file);
 			},
 		});
 
@@ -68,7 +68,8 @@ export default class LightweightMentionsPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const data = (await this.loadData()) as Partial<LightweightMentionsSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 	}
 
 	async saveSettings() {
@@ -338,7 +339,11 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 		}
 	}
 
-	async selectSuggestion(value: MentionSuggestion): Promise<void> {
+	selectSuggestion(value: MentionSuggestion, _evt: MouseEvent | KeyboardEvent): void {
+		void this.applySuggestion(value);
+	}
+
+	private async applySuggestion(value: MentionSuggestion): Promise<void> {
 		const context = this.context;
 		if (!context) return;
 
