@@ -1,0 +1,125 @@
+// Plain-Node regression test (no test framework dependency) for the mention
+// suggestion ranking logic in main.ts. Bundles main.ts with esbuild (already
+// a devDependency) and stubs the "obsidian" module, since rankCandidates/
+// hasStrongMatch are pure functions that don't need a real Obsidian runtime.
+
+import esbuild from "esbuild";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+
+async function loadMainExports() {
+	const result = await esbuild.build({
+		entryPoints: [path.join(__dirname, "..", "main.ts")],
+		bundle: true,
+		format: "cjs",
+		platform: "node",
+		external: ["obsidian"],
+		write: false,
+	});
+
+	const code = result.outputFiles[0].text;
+	const mod = { exports: {} };
+	const obsidianStub = {
+		Plugin: class {},
+		EditorSuggest: class {
+			constructor(app) {
+				this.app = app;
+			}
+		},
+		PluginSettingTab: class {
+			constructor() {}
+		},
+		TFile: class {},
+		TFolder: class {},
+		Notice: class {},
+		Setting: class {},
+		normalizePath: (p) => p,
+		prepareFuzzySearch: () => () => null,
+	};
+	const fakeRequire = (id) => (id === "obsidian" ? obsidianStub : require(id));
+	const fn = new Function("module", "exports", "require", code);
+	fn(mod, mod.exports, fakeRequire);
+	return mod.exports;
+}
+
+/** Simple real subsequence matcher, standing in for Obsidian's fuzzy search:
+ * matches if every character of `query` appears in `label`, in order,
+ * anywhere -- including scattered across unrelated words. This is exactly
+ * the kind of match that produced the reported bug ("Vivien" fuzzy-matching
+ * "Vivy - Fluorite Eye's Song"). */
+function subsequenceFuzzy(query) {
+	const lowerQuery = query.toLowerCase();
+	return (label) => {
+		const lowerLabel = label.toLowerCase();
+		let qi = 0;
+		for (let li = 0; li < lowerLabel.length && qi < lowerQuery.length; li++) {
+			if (lowerLabel[li] === lowerQuery[qi]) qi++;
+		}
+		return qi === lowerQuery.length ? { score: -label.length } : null;
+	};
+}
+
+const { rankCandidates, hasStrongMatch } = await loadMainExports();
+
+function test(name, fn) {
+	try {
+		fn();
+		console.log(`ok - ${name}`);
+	} catch (err) {
+		console.error(`FAIL - ${name}`);
+		console.error(err);
+		process.exitCode = 1;
+	}
+}
+
+test("fuzzy-only noise does not count as a strong match", () => {
+	const candidates = [{ item: "vivy", label: "Vivy - Fluorite Eye's Song" }];
+	const ranked = rankCandidates(candidates, "Vivien", subsequenceFuzzy("Vivien"));
+
+	assert.equal(ranked.length, 1, "the noisy fuzzy match should still be ranked (as a fallback)");
+	assert.equal(ranked[0].tier, 0, "a pure fuzzy subsequence match must be the weakest tier");
+	assert.equal(
+		hasStrongMatch(ranked),
+		false,
+		"fuzzy-only noise must not be treated as a strong match -- otherwise \"create\" gets buried behind it"
+	);
+});
+
+test("a real substring match outranks unrelated fuzzy noise", () => {
+	const candidates = [
+		{ item: "vivy", label: "Vivy - Fluorite Eye's Song" },
+		{ item: "vivien", label: "Vivien Dupont" },
+	];
+	const ranked = rankCandidates(candidates, "Vivien", subsequenceFuzzy("Vivien"));
+
+	assert.equal(ranked[0].item, "vivien", "the real match must be ranked first, not the fuzzy noise");
+	assert.equal(hasStrongMatch(ranked), true);
+});
+
+test("an exact match beats a prefix match", () => {
+	const candidates = [
+		{ item: "long", label: "Test Driven Development" },
+		{ item: "exact", label: "Test" },
+	];
+	const ranked = rankCandidates(candidates, "Test", subsequenceFuzzy("Test"));
+
+	assert.equal(ranked[0].item, "exact");
+	assert.equal(ranked[0].tier, 3);
+});
+
+test("empty query returns all candidates unranked (tier 1, stable order)", () => {
+	const candidates = [
+		{ item: "a", label: "Alpha" },
+		{ item: "b", label: "Beta" },
+	];
+	const ranked = rankCandidates(candidates, "", () => null);
+
+	assert.equal(ranked.length, 2);
+	assert.equal(ranked[0].item, "a");
+	assert.equal(ranked[1].item, "b");
+});

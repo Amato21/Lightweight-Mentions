@@ -38,6 +38,53 @@ type MentionSuggestion =
 	| { type: "heading"; stubFile: TFile; heading: string; display: string }
 	| { type: "create"; query: string };
 
+export interface RankedCandidate<T> {
+	item: T;
+	tier: number;
+	score: number;
+}
+
+/**
+ * Ranks candidates by how well their label matches the query: exact match, then
+ * "starts with", then "contains", and only as a last resort a fuzzy subsequence
+ * match (which can match letters scattered anywhere in an unrelated label, e.g.
+ * querying "Vivien" fuzzy-matching "Vivy - Fluorite Eye's Song"). Without these
+ * tiers, fuzzy noise could rank above -- or bury -- an actually relevant match
+ * on a large vault.
+ */
+export function rankCandidates<T>(
+	candidates: { item: T; label: string }[],
+	query: string,
+	fuzzyMatch: (label: string) => { score: number } | null
+): RankedCandidate<T>[] {
+	if (!query) {
+		return candidates.map((c) => ({ item: c.item, tier: 1, score: 0 }));
+	}
+
+	const lowerQuery = query.toLowerCase();
+	const ranked: RankedCandidate<T>[] = [];
+	for (const c of candidates) {
+		const lowerLabel = c.label.toLowerCase();
+		if (lowerLabel === lowerQuery) {
+			ranked.push({ item: c.item, tier: 3, score: 0 });
+		} else if (lowerLabel.startsWith(lowerQuery)) {
+			ranked.push({ item: c.item, tier: 2, score: -c.label.length });
+		} else if (lowerLabel.includes(lowerQuery)) {
+			ranked.push({ item: c.item, tier: 1, score: -c.label.length });
+		} else {
+			const result = fuzzyMatch(c.label);
+			if (result) ranked.push({ item: c.item, tier: 0, score: result.score });
+		}
+	}
+
+	ranked.sort((a, b) => (b.tier !== a.tier ? b.tier - a.tier : b.score - a.score));
+	return ranked;
+}
+
+export function hasStrongMatch<T>(ranked: RankedCandidate<T>[]): boolean {
+	return ranked.some((r) => r.tier >= 1);
+}
+
 const FILENAME_FORBIDDEN = /[\\/:*?"<>|]/g;
 
 function sanitizeFilename(name: string): string {
@@ -281,22 +328,16 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 
 	getSuggestions(context: EditorSuggestContext): MentionSuggestion[] {
 		const query = context.query.trim();
-		const fuzzy = query ? prepareFuzzySearch(query) : null;
 		const activeFile = context.file;
 
-		const fileMatches: MentionSuggestion[] = [];
+		type Candidate = { item: MentionSuggestion; label: string };
+		const candidates: Candidate[] = [];
+
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			if (activeFile && file.path === this.plugin.settings.stubFilePath) continue;
-			const label = file.basename;
-			if (!fuzzy) {
-				fileMatches.push({ type: "file", file, display: label });
-				continue;
-			}
-			const result = fuzzy(label);
-			if (result) fileMatches.push({ type: "file", file, display: label });
+			candidates.push({ item: { type: "file", file, display: file.basename }, label: file.basename });
 		}
 
-		const headingMatches: MentionSuggestion[] = [];
 		const stubFile = this.app.vault.getAbstractFileByPath(
 			normalizePath(this.plugin.settings.stubFilePath)
 		);
@@ -306,20 +347,27 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 				(h) => h.level === this.plugin.settings.stubHeadingLevel
 			);
 			for (const h of headings) {
-				if (!fuzzy || fuzzy(h.heading)) {
-					headingMatches.push({ type: "heading", stubFile, heading: h.heading, display: h.heading });
-				}
+				candidates.push({
+					item: { type: "heading", stubFile, heading: h.heading, display: h.heading },
+					label: h.heading,
+				});
 			}
 		}
 
-		const results = [...fileMatches, ...headingMatches].slice(0, 20);
+		const fuzzy = query ? prepareFuzzySearch(query) : () => null;
+		const ranked = rankCandidates(candidates, query, fuzzy);
+		const results = ranked.slice(0, 20).map((r) => r.item);
 
-		const exactExists = results.some(
-			(r) => (r.type === "file" ? r.display : r.type === "heading" ? r.display : "").toLowerCase() ===
-				query.toLowerCase()
-		);
+		const exactExists = ranked.some((r) => r.tier === 3);
 		if (query && !exactExists) {
-			results.push({ type: "create", query });
+			const createItem: MentionSuggestion = { type: "create", query };
+			// Nothing solid matched (only weak fuzzy noise, or no candidates at all):
+			// put "create" first so it's the one Enter picks, instead of noise.
+			if (hasStrongMatch(ranked)) {
+				results.push(createItem);
+			} else {
+				results.unshift(createItem);
+			}
 		}
 
 		return results;
