@@ -78,6 +78,21 @@ requests are made.
 
 ---
 
+## Plugin review notes
+
+Findings from the Obsidian plugin review, and how each was addressed:
+
+| Finding | Status |
+|---|---|
+| Release name must include the `manifest.json` version | Fixed — release titles now include the version (e.g. "0.2.1 — ..."). |
+| Unawaited promise (`main.ts`, command callback) | Fixed — wrapped with `void`. |
+| Unsafe `any` assignment (`loadData()` into typed settings) | Fixed — result is cast to `Partial<LightweightMentionsSettings> \| null` before merging. |
+| `EditorSuggest.selectSuggestion` returned `Promise<void>` instead of `void` | Fixed — split into a sync `void` method that fires a private async helper. |
+| `builtin-modules` package flagged for replacement | Fixed — swapped for Node's own `module.builtinModules`. |
+| Vault enumeration (`vault.getMarkdownFiles`, etc.) | Documented, not changed — see "Data access" above; required for the mention suggester to work. |
+
+---
+
 ## Known limitations (v0.1.0)
 
 - One global stub file — no per-topic/per-folder stub files yet.
