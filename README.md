@@ -56,13 +56,14 @@ Type `@` (configurable) followed by a name and pick a suggestion:
   4. Rewrites every `[[Mentions#Heading]]` link across the vault to point at
      the new note.
 
-  **Templater note:** the chosen template's raw text is used as-is (with
-  `{{title}}`/`{{content}}` substituted) — this plugin does not run Templater
-  syntax (`<% ... %>`) through Templater itself. If your template contains
-  Templater syntax, it will show up unprocessed in the new note unless
-  Templater's own automatic folder-template trigger happens to also apply to
-  the destination folder on an empty file, which won't be the case here since
-  the note is created with content already in it.
+  **Templater note:** this plugin doesn't call Templater itself — it just
+  writes the chosen template's raw text into the new note (with
+  `{{title}}`/`{{content}}` substituted first). In practice, Templater syntax
+  in that text still gets executed: if Templater's **"Trigger Templater on
+  new file creation"** setting is enabled, Templater watches for any newly
+  created file (regardless of which plugin created it or whether it started
+  empty) and processes any Templater syntax already present in its content.
+  Confirmed working with a template containing live Templater tags.
 
 ### Configuration
 Go to **Settings → Lightweight Mentions**:
