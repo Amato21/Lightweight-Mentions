@@ -364,7 +364,15 @@ class TemplatePickerModal extends FuzzySuggestModal<TFile> {
 	}
 
 	onClose(): void {
-		if (!this.chosen) this.onChoose(null);
+		// Obsidian's Modal/SuggestModal internals can call onClose() before
+		// onChooseItem() runs for the picked item (the exact ordering isn't
+		// part of the public API contract), so checking `this.chosen`
+		// synchronously here could resolve to "no template" even though the
+		// user did pick one -- it just hadn't been recorded yet. Defer the
+		// check a tick so onChooseItem() gets a chance to run first either way.
+		setTimeout(() => {
+			if (!this.chosen) this.onChoose(null);
+		}, 0);
 	}
 }
 

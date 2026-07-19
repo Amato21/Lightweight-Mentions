@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- Picking a template in the promotion picker could silently produce an empty
+  note (just the mention's name, no frontmatter or template content at all),
+  because the modal's `onClose()` handler could run before `onChooseItem()`
+  recorded the pick, resolving to "no template" first. The check is now
+  deferred a tick so the actual choice is recorded before it's read.
+
 ## [0.2.2] - 2026-07-18
 
 ### Changed
