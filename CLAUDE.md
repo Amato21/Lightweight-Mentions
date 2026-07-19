@@ -20,6 +20,7 @@
 
 - `main.js` is committed (not gitignored) so the plugin works straight from a clone/download, without requiring `npm install && npm run build` first. Keep it in sync with `main.ts` on every change — rebuild before committing.
 - Ideas that get set aside during discussion should be tracked as GitHub issues, not just dropped.
+- **Never bump the version** in `manifest.json`/`package.json`/`versions.json` on a regular fix/feature PR. The version only moves when the user explicitly says they're preparing or publishing a release. Obsidian's plugin review checks that the manifest version has a matching published GitHub release — bumping ahead of an actual release breaks that check and forces the user to publish (or manually roll back) a release they weren't ready for.
 
 ## Communication
 
