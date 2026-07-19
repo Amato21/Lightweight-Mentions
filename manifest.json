@@ -1,7 +1,7 @@
 {
 	"id": "lightweight-mentions",
 	"name": "Lightweight Mentions",
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"minAppVersion": "1.4.0",
 	"description": "Type a trigger character to mention anything: links to an existing note, or to a lightweight heading inside a shared stub file if no real note exists yet. Promote a mention to a full note whenever it deserves one.",
 	"author": "Amato21",

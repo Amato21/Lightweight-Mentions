@@ -5,6 +5,7 @@ import {
 	EditorSuggest,
 	EditorSuggestContext,
 	EditorSuggestTriggerInfo,
+	FuzzySuggestModal,
 	MarkdownFileInfo,
 	MarkdownView,
 	Notice,
@@ -21,7 +22,7 @@ interface LightweightMentionsSettings {
 	triggerChar: string;
 	stubFilePath: string;
 	promotedNotesFolder: string;
-	templateFilePath: string;
+	templateFolderPath: string;
 	stubHeadingLevel: number;
 }
 
@@ -29,7 +30,7 @@ const DEFAULT_SETTINGS: LightweightMentionsSettings = {
 	triggerChar: "@",
 	stubFilePath: "Mentions.md",
 	promotedNotesFolder: "",
-	templateFilePath: "",
+	templateFolderPath: "",
 	stubHeadingLevel: 2,
 };
 
@@ -102,6 +103,18 @@ export function rankCandidates<T>(
 
 export function hasStrongMatch<T>(ranked: RankedCandidate<T>[]): boolean {
 	return ranked.some((r) => r.tier >= 1);
+}
+
+/** Filters markdown files down to the direct contents of `folderPath` (not
+ * subfolders), for populating the template picker. Pure/testable: takes
+ * plain `{ path, parentPath }` records instead of real TFile objects. */
+export function templatesInFolder<T extends { parentPath: string | null }>(
+	files: T[],
+	folderPath: string
+): T[] {
+	const normalized = folderPath.replace(/^\/+|\/+$/g, "");
+	if (!normalized) return [];
+	return files.filter((f) => f.parentPath === normalized);
 }
 
 const FILENAME_FORBIDDEN = /[\\/:*?"<>|]/g;
@@ -241,10 +254,26 @@ export default class LightweightMentionsPlugin extends Plugin {
 			return;
 		}
 
-		await this.promoteHeading(stubFile, headingText);
+		const templateFile = await this.pickTemplate();
+		await this.promoteHeading(stubFile, headingText, templateFile);
 	}
 
-	async promoteHeading(stubFile: TFile, headingText: string) {
+	/** Lists markdown files directly inside the configured template folder and lets
+	 * the user pick one (or none). Resolves to `null` immediately if no template
+	 * folder is configured or it's empty -- no picker shown in that case. */
+	async pickTemplate(): Promise<TFile | null> {
+		if (!this.settings.templateFolderPath) return null;
+
+		const files = this.app.vault.getMarkdownFiles().map((f) => ({ file: f, parentPath: f.parent?.path ?? null }));
+		const templates = templatesInFolder(files, this.settings.templateFolderPath).map((f) => f.file);
+		if (templates.length === 0) return null;
+
+		return new Promise((resolve) => {
+			new TemplatePickerModal(this.app, templates, resolve).open();
+		});
+	}
+
+	async promoteHeading(stubFile: TFile, headingText: string, templateFile: TFile | null) {
 		const content = await this.app.vault.read(stubFile);
 		const section = this.findHeadingSection(stubFile, headingText, this.settings.stubHeadingLevel, content);
 		if (!section) {
@@ -253,16 +282,11 @@ export default class LightweightMentionsPlugin extends Plugin {
 		}
 
 		let newContent = section.body;
-		if (this.settings.templateFilePath) {
-			const templateFile = this.app.vault.getAbstractFileByPath(
-				normalizePath(this.settings.templateFilePath)
-			);
-			if (templateFile instanceof TFile) {
-				const template = await this.app.vault.read(templateFile);
-				newContent = template
-					.replace(/{{\s*title\s*}}/gi, headingText)
-					.replace(/{{\s*content\s*}}/gi, section.body);
-			}
+		if (templateFile) {
+			const template = await this.app.vault.read(templateFile);
+			newContent = template
+				.replace(/{{\s*title\s*}}/gi, headingText)
+				.replace(/{{\s*content\s*}}/gi, section.body);
 		}
 
 		const folder = normalizePath(this.settings.promotedNotesFolder || stubFile.parent?.path || "");
@@ -313,6 +337,34 @@ export default class LightweightMentionsPlugin extends Plugin {
 			await this.app.vault.modify(file, replaced);
 		}
 		return updated;
+	}
+}
+
+/** Lets the user pick one template file out of the configured template folder
+ * (or none, via Esc) when promoting a mention. */
+class TemplatePickerModal extends FuzzySuggestModal<TFile> {
+	private chosen = false;
+
+	constructor(app: App, private templates: TFile[], private onChoose: (file: TFile | null) => void) {
+		super(app);
+		this.setPlaceholder("Choose a template for the promoted note (Esc for none)");
+	}
+
+	getItems(): TFile[] {
+		return this.templates;
+	}
+
+	getItemText(item: TFile): string {
+		return item.basename;
+	}
+
+	onChooseItem(item: TFile): void {
+		this.chosen = true;
+		this.onChoose(item);
+	}
+
+	onClose(): void {
+		if (!this.chosen) this.onChoose(null);
 	}
 }
 
@@ -479,13 +531,15 @@ class LightweightMentionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Template file")
-			.setDesc("Optional template applied when promoting a mention. Use {{title}} and {{content}} placeholders.")
+			.setName("Template folder")
+			.setDesc(
+				"Optional folder of templates. When promoting a mention, you'll be asked which template in this folder to apply (use {{title}} and {{content}} placeholders), or Esc for none. Leave empty to always promote without a template."
+			)
 			.addText((text) =>
 				text
-					.setValue(this.plugin.settings.templateFilePath)
+					.setValue(this.plugin.settings.templateFolderPath)
 					.onChange(async (value) => {
-						this.plugin.settings.templateFilePath = value;
+						this.plugin.settings.templateFolderPath = value;
 						await this.plugin.saveSettings();
 					})
 			);
