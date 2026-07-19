@@ -10,9 +10,9 @@ Type a trigger character (`@` by default) followed by a name:
   file** (`Mentions.md` by default) and links to that heading instead of
   forcing you to create — and later manage — a whole new note.
 - Whenever a stub deserves to become a real note, run **Promote mention to
-  full note**: it extracts the heading into a new file (optionally through a
-  template) and rewrites every existing link across the vault to point at
-  the new note instead of the old heading.
+  full note**: it extracts the heading into a new file (optionally picking a
+  template from a folder of them) and rewrites every existing link across the
+  vault to point at the new note instead of the old heading.
 
 ---
 
@@ -48,11 +48,21 @@ Type `@` (configurable) followed by a name and pick a suggestion:
 - **Promote mention to full note** — run with the cursor either on a
   `[[Mentions#Heading]]` link anywhere in the vault, or inside that heading's
   section in the stub file itself. It:
-  1. Creates a new note from the heading's content (through the configured
-     template, if any).
-  2. Removes the heading from the stub file.
-  3. Rewrites every `[[Mentions#Heading]]` link across the vault to point at
+  1. If a template folder is configured and has at least one file in it,
+     asks which template to apply (or none, via Esc).
+  2. Creates a new note from the heading's content, through that template if
+     one was picked.
+  3. Removes the heading from the stub file.
+  4. Rewrites every `[[Mentions#Heading]]` link across the vault to point at
      the new note.
+
+  **Templater note:** the chosen template's raw text is used as-is (with
+  `{{title}}`/`{{content}}` substituted) — this plugin does not run Templater
+  syntax (`<% ... %>`) through Templater itself. If your template contains
+  Templater syntax, it will show up unprocessed in the new note unless
+  Templater's own automatic folder-template trigger happens to also apply to
+  the destination folder on an empty file, which won't be the case here since
+  the note is created with content already in it.
 
 ### Configuration
 Go to **Settings → Lightweight Mentions**:
@@ -63,8 +73,9 @@ Go to **Settings → Lightweight Mentions**:
   as headings (default `Mentions.md`).
 - **Promoted notes folder** — where new notes land when a mention is
   promoted (defaults to the stub file's own folder).
-- **Template file** — optional template used on promotion, with `{{title}}`
-  and `{{content}}` placeholders.
+- **Template folder** — optional folder of templates; promoting a mention
+  asks which one (if any) to apply, with `{{title}}` and `{{content}}`
+  placeholders.
 
 ---
 
@@ -93,7 +104,7 @@ Findings from the Obsidian plugin review, and how each was addressed:
 
 ---
 
-## Known limitations (v0.1.0)
+## Known limitations
 
 - One global stub file — no per-topic/per-folder stub files yet.
 - Heading matching for promotion is by exact text + heading level, so

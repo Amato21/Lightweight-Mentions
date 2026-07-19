@@ -34,6 +34,11 @@ async function loadMainExports() {
 		PluginSettingTab: class {
 			constructor() {}
 		},
+		FuzzySuggestModal: class {
+			constructor(app) {
+				this.app = app;
+			}
+		},
 		TFile: class {},
 		TFolder: class {},
 		Notice: class {},
@@ -64,7 +69,7 @@ function subsequenceFuzzy(query) {
 	};
 }
 
-const { rankCandidates, hasStrongMatch } = await loadMainExports();
+const { rankCandidates, hasStrongMatch, templatesInFolder } = await loadMainExports();
 
 function test(name, fn) {
 	try {
@@ -153,4 +158,27 @@ test("empty query returns all candidates unranked (tier 1, stable order)", () =>
 	assert.equal(ranked.length, 2);
 	assert.equal(ranked[0].item, "a");
 	assert.equal(ranked[1].item, "b");
+});
+
+test("templatesInFolder only returns direct children of the configured folder", () => {
+	const files = [
+		{ path: "Templates/Person.md", parentPath: "Templates" },
+		{ path: "Templates/Sub/Nested.md", parentPath: "Templates/Sub" },
+		{ path: "Other/Thing.md", parentPath: "Other" },
+	];
+
+	assert.deepEqual(
+		templatesInFolder(files, "Templates").map((f) => f.path),
+		["Templates/Person.md"]
+	);
+});
+
+test("templatesInFolder tolerates leading/trailing slashes in the setting", () => {
+	const files = [{ path: "Templates/Person.md", parentPath: "Templates" }];
+	assert.equal(templatesInFolder(files, "/Templates/").length, 1);
+});
+
+test("templatesInFolder returns nothing when no folder is configured", () => {
+	const files = [{ path: "Templates/Person.md", parentPath: "Templates" }];
+	assert.equal(templatesInFolder(files, "").length, 0);
 });
