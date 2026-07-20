@@ -63,7 +63,6 @@ Type `@` (configurable) followed by a name and pick a suggestion:
   new file creation"** setting is enabled, Templater watches for any newly
   created file (regardless of which plugin created it or whether it started
   empty) and processes any Templater syntax already present in its content.
-  Confirmed working with a template containing live Templater tags.
 
 ### Configuration
 Go to **Settings → Lightweight Mentions**:
