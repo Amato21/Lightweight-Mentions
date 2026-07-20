@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   because the modal's `onClose()` handler could run before `onChooseItem()`
   recorded the pick, resolving to "no template" first. The check is now
   deferred a tick so the actual choice is recorded before it's read.
+- Promoting with a template that has no `{{content}}` placeholder silently
+  discarded whatever the user had written under the mention heading -- lost
+  for good, since the heading is removed from the stub file right after
+  promotion. That text is now appended at the end of the note instead.
 
 ### Documentation
 - Corrected 0.2.2's note which said Templater syntax in a template wouldn't

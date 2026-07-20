@@ -69,7 +69,7 @@ function subsequenceFuzzy(query) {
 	};
 }
 
-const { rankCandidates, hasStrongMatch, templatesInFolder } = await loadMainExports();
+const { rankCandidates, hasStrongMatch, templatesInFolder, mergeTemplateContent } = await loadMainExports();
 
 function test(name, fn) {
 	try {
@@ -181,4 +181,22 @@ test("templatesInFolder tolerates leading/trailing slashes in the setting", () =
 test("templatesInFolder returns nothing when no folder is configured", () => {
 	const files = [{ path: "Templates/Person.md", parentPath: "Templates" }];
 	assert.equal(templatesInFolder(files, "").length, 0);
+});
+
+test("mergeTemplateContent fills {{content}} when the template has it", () => {
+	const result = mergeTemplateContent("# {{title}}\n\n{{content}}\n\n## Notes", "Vivien", "Met at the party.");
+	assert.equal(result, "# Vivien\n\nMet at the party.\n\n## Notes");
+});
+
+test("mergeTemplateContent appends the body when the template has no {{content}} placeholder", () => {
+	// Reported bug: a template without {{content}} silently dropped whatever
+	// the user had written under the mention heading -- permanently, since
+	// the heading is removed from the stub file right after promotion.
+	const result = mergeTemplateContent("# {{title}}\n\n## Type\n- Person", "Vivien", "Met at the party.");
+	assert.equal(result, "# Vivien\n\n## Type\n- Person\n\nMet at the party.");
+});
+
+test("mergeTemplateContent does not append an empty trailing block when there is no body", () => {
+	const result = mergeTemplateContent("# {{title}}\n\n## Type\n- Person", "Vivien", "");
+	assert.equal(result, "# Vivien\n\n## Type\n- Person");
 });
