@@ -13,13 +13,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   recorded the pick, resolving to "no template" first. The check is now
   deferred a tick so the actual choice is recorded before it's read.
 
-### Corrected
-- 0.2.2's note said Templater syntax in a template wouldn't be processed on
-  promotion. Confirmed by testing: it is, as long as Templater's own
-  "Trigger Templater on new file creation" setting is enabled -- Templater
-  processes any of its syntax already present in a newly created file,
-  regardless of which plugin created it. See the README's updated
-  "Templater note" under Commands.
+### Documentation
+- Corrected 0.2.2's note which said Templater syntax in a template wouldn't
+  be processed on promotion. It is, as long as Templater's own "Trigger
+  Templater on new file creation" setting is enabled -- Templater processes
+  any of its syntax already present in a newly created file, regardless of
+  which plugin created it. See the README's updated "Templater note" under
+  Commands.
 
 ## [0.2.2] - 2026-07-18
 
