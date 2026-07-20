@@ -117,6 +117,20 @@ export function templatesInFolder<T extends { parentPath: string | null }>(
 	return files.filter((f) => f.parentPath === normalized);
 }
 
+/** Fills a template's `{{title}}`/`{{content}}` placeholders. If the template
+ * has no `{{content}}` placeholder at all, the mention's body is appended at
+ * the end instead of silently dropped -- otherwise whatever the user wrote
+ * under the mention heading would be permanently lost the moment the heading
+ * is removed from the stub file during promotion. */
+export function mergeTemplateContent(template: string, title: string, body: string): string {
+	const hasContentPlaceholder = /{{\s*content\s*}}/i.test(template);
+	const filled = template.replace(/{{\s*title\s*}}/gi, title).replace(/{{\s*content\s*}}/gi, body);
+	if (hasContentPlaceholder || !body) {
+		return filled;
+	}
+	return `${filled}\n\n${body}`;
+}
+
 const FILENAME_FORBIDDEN = /[\\/:*?"<>|]/g;
 
 function sanitizeFilename(name: string): string {
@@ -284,9 +298,7 @@ export default class LightweightMentionsPlugin extends Plugin {
 		let newContent = section.body;
 		if (templateFile) {
 			const template = await this.app.vault.read(templateFile);
-			newContent = template
-				.replace(/{{\s*title\s*}}/gi, headingText)
-				.replace(/{{\s*content\s*}}/gi, section.body);
+			newContent = mergeTemplateContent(template, headingText, section.body);
 		}
 
 		const folder = normalizePath(this.settings.promotedNotesFolder || stubFile.parent?.path || "");
