@@ -69,7 +69,8 @@ function subsequenceFuzzy(query) {
 	};
 }
 
-const { rankCandidates, hasStrongMatch, templatesInFolder, mergeTemplateContent } = await loadMainExports();
+const { rankCandidates, hasStrongMatch, templatesInFolder, mergeTemplateContent, parseAliases, dedupeByKey } =
+	await loadMainExports();
 
 function test(name, fn) {
 	try {
@@ -199,4 +200,35 @@ test("mergeTemplateContent appends the body when the template has no {{content}}
 test("mergeTemplateContent does not append an empty trailing block when there is no body", () => {
 	const result = mergeTemplateContent("# {{title}}\n\n## Type\n- Person", "Vivien", "");
 	assert.equal(result, "# Vivien\n\n## Type\n- Person");
+});
+
+test("parseAliases handles a YAML list", () => {
+	assert.deepEqual(parseAliases(["Viv", "Vivi"]), ["Viv", "Vivi"]);
+});
+
+test("parseAliases handles a comma-separated string", () => {
+	assert.deepEqual(parseAliases("Viv, Vivi"), ["Viv", "Vivi"]);
+});
+
+test("parseAliases handles a single plain string", () => {
+	assert.deepEqual(parseAliases("Viv"), ["Viv"]);
+});
+
+test("parseAliases returns an empty list for null/undefined/empty", () => {
+	assert.deepEqual(parseAliases(undefined), []);
+	assert.deepEqual(parseAliases(null), []);
+	assert.deepEqual(parseAliases(""), []);
+});
+
+test("dedupeByKey keeps only the first occurrence of each key", () => {
+	const items = [
+		{ key: "a", label: "first" },
+		{ key: "b", label: "only" },
+		{ key: "a", label: "second" },
+	];
+	const result = dedupeByKey(items, (i) => i.key);
+	assert.deepEqual(
+		result.map((i) => i.label),
+		["first", "only"]
+	);
 });

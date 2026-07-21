@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: LightweightMentionsSettings = {
 };
 
 type MentionSuggestion =
-	| { type: "file"; file: TFile; display: string }
+	| { type: "file"; file: TFile; display: string; alias?: string }
 	| { type: "heading"; stubFile: TFile; heading: string; display: string }
 	| { type: "create"; query: string };
 
@@ -129,6 +129,30 @@ export function mergeTemplateContent(template: string, title: string, body: stri
 		return filled;
 	}
 	return `${filled}\n\n${body}`;
+}
+
+/** Normalizes a frontmatter `alias`/`aliases` value into a clean list of
+ * strings. Obsidian accepts that value as a single string, a
+ * comma-separated string, or a YAML list -- this handles all three. */
+export function parseAliases(value: unknown): string[] {
+	if (value === null || value === undefined) return [];
+	const raw = Array.isArray(value) ? value : String(value).split(",");
+	return raw.map((a) => String(a).trim()).filter(Boolean);
+}
+
+/** Keeps only the first occurrence of each key, preserving order. Used to
+ * collapse multiple suggestions for the same underlying file/heading (e.g.
+ * one matched by filename, one by alias) down to whichever ranked best. */
+export function dedupeByKey<T>(items: T[], keyOf: (item: T) => string): T[] {
+	const seen = new Set<string>();
+	const result: T[] = [];
+	for (const item of items) {
+		const key = keyOf(item);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		result.push(item);
+	}
+	return result;
 }
 
 const FILENAME_FORBIDDEN = /[\\/:*?"<>|]/g;
@@ -388,6 +412,15 @@ class TemplatePickerModal extends FuzzySuggestModal<TFile> {
 	}
 }
 
+/** Identifies the underlying file/heading a suggestion points at, regardless
+ * of which label (filename vs. one of its aliases) matched the query -- used
+ * to collapse duplicate suggestions for the same target down to one. */
+function suggestionKey(item: MentionSuggestion): string {
+	if (item.type === "file") return `file:${item.file.path}`;
+	if (item.type === "heading") return `heading:${item.stubFile.path}#${item.heading}`;
+	return "create";
+}
+
 class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 	plugin: LightweightMentionsPlugin;
 
@@ -427,6 +460,15 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			if (activeFile && file.path === this.plugin.settings.stubFilePath) continue;
 			candidates.push({ item: { type: "file", file, display: file.basename }, label: file.basename });
+
+			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			const aliases = [
+				...parseAliases(frontmatter?.aliases),
+				...parseAliases(frontmatter?.alias),
+			];
+			for (const alias of aliases) {
+				candidates.push({ item: { type: "file", file, display: alias, alias }, label: alias });
+			}
 		}
 
 		const stubFile = this.app.vault.getAbstractFileByPath(
@@ -447,7 +489,8 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 
 		const fuzzy = query ? prepareFuzzySearch(query) : () => null;
 		const ranked = rankCandidates(candidates, query, fuzzy);
-		const results = ranked.slice(0, 20).map((r) => r.item);
+		const deduped = dedupeByKey(ranked, (r) => suggestionKey(r.item));
+		const results = deduped.slice(0, 20).map((r) => r.item);
 
 		const exactExists = ranked.some((r) => r.tier === 3);
 		if (query && !exactExists) {
@@ -468,7 +511,10 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 		el.addClass("lightweight-mentions-suggestion");
 		if (value.type === "file") {
 			el.createSpan({ text: value.display });
-			el.createSpan({ text: " note", cls: "lightweight-mentions-tag" });
+			el.createSpan({
+				text: value.alias ? ` alias → ${value.file.basename}` : " note",
+				cls: "lightweight-mentions-tag",
+			});
 		} else if (value.type === "heading") {
 			el.createSpan({ text: value.display });
 			el.createSpan({ text: " mention", cls: "lightweight-mentions-tag" });
@@ -488,7 +534,7 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 
 		let linkText: string;
 		if (value.type === "file") {
-			linkText = `[[${value.file.basename}]]`;
+			linkText = value.alias ? `[[${value.file.basename}|${value.alias}]]` : `[[${value.file.basename}]]`;
 		} else if (value.type === "heading") {
 			linkText = `[[${value.stubFile.basename}#${value.heading}]]`;
 		} else {
