@@ -40,6 +40,9 @@ This plugin isn't on the official Community Plugins list yet.
 Type `@` (configurable) followed by a name and pick a suggestion:
 
 - An existing note → inserts `[[Note]]`.
+- An existing note matched by one of its frontmatter aliases (`alias` or
+  `aliases`, single string, comma-separated, or a YAML list) → inserts
+  `[[Note|Alias]]`.
 - An existing stub heading → inserts `[[Mentions#Heading]]`.
 - Nothing found → `Create "..."` appends `## Name` to the stub file and
   inserts `[[Mentions#Name]]`.
@@ -110,7 +113,6 @@ Findings from the Obsidian plugin review, and how each was addressed:
 - Heading matching for promotion is by exact text + heading level, so
   renaming a stub heading by hand before promoting can break the link
   rewrite.
-- No alias support yet on file mentions.
 
 ---
 

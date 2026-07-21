@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- The mention suggester now matches a note's frontmatter aliases (`alias` or
+  `aliases`, as a single string, comma-separated, or a YAML list), not just
+  its filename. Picking an alias match inserts `[[Note|Alias]]`. Matching a
+  filename and an alias for the same note no longer shows it twice -- only
+  the best-ranked match is kept.
+
 ### Fixed
 - Picking a template in the promotion picker could silently produce an empty
   note (just the mention's name, no frontmatter or template content at all),
