@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Convert link to lightweight mention** command: turns an existing
+  unresolved `[[Something]]` link (mentioned for months, never had a note)
+  into a lightweight mention. Adds/reuses a heading for it in the stub file
+  and rewrites every occurrence of that link across the vault, not just the
+  one under the cursor.
+- **Convert unresolved links to lightweight mentions...** command: the bulk
+  version. Lists every distinct unresolved link in the vault (via
+  Obsidian's own `metadataCache.unresolvedLinks`, no manual scanning) with
+  its occurrence count and a checkbox, to convert many at once.
+- `addStubHeading()` now reuses an existing heading instead of creating a
+  duplicate if one with the same name already exists in the stub file.
+
+### Changed
+- Extracted the link-rewriting logic ("Promote"'s stub-heading-to-new-note
+  rewrite, and the new unresolved-link-to-stub-heading rewrite) into a
+  single shared, pure `rewriteLinksInContent()` function -- same operation,
+  opposite directions, previously duplicated.
+
 ## [0.2.3] - 2026-08-11
 
 ### Added

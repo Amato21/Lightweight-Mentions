@@ -39,6 +39,12 @@ async function loadMainExports() {
 				this.app = app;
 			}
 		},
+		Modal: class {
+			constructor(app) {
+				this.app = app;
+				this.contentEl = { createEl: () => ({}), createDiv: () => ({}), createSpan: () => ({}), empty: () => {} };
+			}
+		},
 		TFile: class {},
 		TFolder: class {},
 		Notice: class {},
@@ -77,6 +83,8 @@ const {
 	parseAliases,
 	dedupeByKey,
 	findMentionTrigger,
+	rewriteLinksInContent,
+	aggregateUnresolvedLinks,
 } = await loadMainExports();
 
 function test(name, fn) {
@@ -267,4 +275,39 @@ test("findMentionTrigger stays suppressed while typing further after that link",
 
 test("findMentionTrigger blocks when the query itself contains an unclosed [[", () => {
 	assert.equal(findMentionTrigger("Hello @foo [[bar", "@"), null);
+});
+
+test("rewriteLinksInContent rewrites every plain occurrence and counts them", () => {
+	const { content, count } = rewriteLinksInContent(
+		"See [[Sujet1]] and also [[Sujet1]] again.",
+		"Sujet1",
+		"Mentions#Sujet1"
+	);
+	assert.equal(content, "See [[Mentions#Sujet1]] and also [[Mentions#Sujet1]] again.");
+	assert.equal(count, 2);
+});
+
+test("rewriteLinksInContent preserves an alias", () => {
+	const { content, count } = rewriteLinksInContent("See [[Sujet1|Viv]].", "Sujet1", "Mentions#Sujet1");
+	assert.equal(content, "See [[Mentions#Sujet1|Viv]].");
+	assert.equal(count, 1);
+});
+
+test("rewriteLinksInContent leaves unrelated links untouched", () => {
+	const { content, count } = rewriteLinksInContent("See [[Sujet1]] and [[Sujet2]].", "Sujet1", "Mentions#Sujet1");
+	assert.equal(content, "See [[Mentions#Sujet1]] and [[Sujet2]].");
+	assert.equal(count, 1);
+});
+
+test("aggregateUnresolvedLinks sums per-file counts for the same link text", () => {
+	const totals = aggregateUnresolvedLinks({
+		"Note A.md": { Sujet1: 3, Sujet2: 1 },
+		"Note B.md": { Sujet1: 2 },
+	});
+	assert.equal(totals.get("Sujet1"), 5);
+	assert.equal(totals.get("Sujet2"), 1);
+});
+
+test("aggregateUnresolvedLinks returns an empty map for no unresolved links", () => {
+	assert.equal(aggregateUnresolvedLinks({}).size, 0);
 });

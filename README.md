@@ -67,6 +67,20 @@ Type `@` (configurable) followed by a name and pick a suggestion:
   created file (regardless of which plugin created it or whether it started
   empty) and processes any Templater syntax already present in its content.
 
+- **Convert link to lightweight mention** — for an existing `[[Something]]`
+  link that's never had a matching note (mentioned for months, never written
+  up), run this with the cursor on that link. It adds/reuses a heading for it
+  in the stub file, then rewrites **every** occurrence of that link across
+  the whole vault to point at the new heading — not just the one under the
+  cursor. Links with a `#heading` component aren't supported yet.
+
+- **Convert unresolved links to lightweight mentions...** — the bulk version:
+  opens a list of every distinct unresolved link in the vault (via
+  Obsidian's own unresolved-links index, so it's instant even on a large
+  vault), each with how many times it's used and a checkbox, so you can
+  convert many at once instead of running the command above one link at a
+  time.
+
 ### Configuration
 Go to **Settings → Lightweight Mentions**:
 
