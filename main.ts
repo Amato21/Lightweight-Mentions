@@ -506,6 +506,11 @@ class BulkConvertModal extends Modal {
 			text: "All checked links will be added as headings in the stub file, and every occurrence across the vault rewritten to point at them.",
 		});
 
+		const selectRow = contentEl.createDiv({ cls: "lightweight-mentions-bulk-actions" });
+		const selectAllBtn = selectRow.createEl("button", { text: "Select all" });
+		const deselectAllBtn = selectRow.createEl("button", { text: "Deselect all" });
+
+		const checkboxes: HTMLInputElement[] = [];
 		const list = contentEl.createDiv({ cls: "lightweight-mentions-bulk-list" });
 		for (const entry of this.entries) {
 			const row = list.createDiv({ cls: "lightweight-mentions-bulk-row" });
@@ -515,12 +520,22 @@ class BulkConvertModal extends Modal {
 				if (checkbox.checked) this.selected.add(entry.link);
 				else this.selected.delete(entry.link);
 			});
+			checkboxes.push(checkbox);
 			row.createSpan({ text: ` ${entry.link} ` });
 			row.createSpan({
 				text: `(${entry.count} mention${entry.count === 1 ? "" : "s"})`,
 				cls: "lightweight-mentions-tag",
 			});
 		}
+
+		selectAllBtn.addEventListener("click", () => {
+			for (const checkbox of checkboxes) checkbox.checked = true;
+			this.selected = new Set(this.entries.map((e) => e.link));
+		});
+		deselectAllBtn.addEventListener("click", () => {
+			for (const checkbox of checkboxes) checkbox.checked = false;
+			this.selected.clear();
+		});
 
 		const buttonRow = contentEl.createDiv({ cls: "lightweight-mentions-bulk-actions" });
 		const convertBtn = buttonRow.createEl("button", { text: "Convert selected" });
