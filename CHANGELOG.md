@@ -15,7 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Convert unresolved links to lightweight mentions...** command: the bulk
   version. Lists every distinct unresolved link in the vault (via
   Obsidian's own `metadataCache.unresolvedLinks`, no manual scanning) with
-  its occurrence count and a checkbox, to convert many at once.
+  its occurrence count and a checkbox, to convert many at once. Everything
+  is checked by default, with "Select all"/"Deselect all" buttons so
+  unchecking most of a long list doesn't mean clicking every box by hand.
 - `addStubHeading()` now reuses an existing heading instead of creating a
   duplicate if one with the same name already exists in the stub file.
 
