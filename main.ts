@@ -8,6 +8,7 @@ import {
 	FuzzySuggestModal,
 	MarkdownFileInfo,
 	MarkdownView,
+	Modal,
 	Notice,
 	Plugin,
 	PluginSettingTab,
@@ -155,6 +156,39 @@ export function dedupeByKey<T>(items: T[], keyOf: (item: T) => string): T[] {
 	return result;
 }
 
+/** Rewrites every `[[oldTarget]]` or `[[oldTarget|Alias]]` occurrence in
+ * `content` to point at `newTarget`, preserving any alias. Shared by
+ * "Promote" (stub heading -> new note) and "Convert unresolved link"
+ * (bare `[[Name]]` -> stub heading), which are the same operation in
+ * opposite directions. Pure/testable: works on plain text, no vault access. */
+export function rewriteLinksInContent(
+	content: string,
+	oldTarget: string,
+	newTarget: string
+): { content: string; count: number } {
+	const pattern = new RegExp(`\\[\\[${escapeRegExp(oldTarget)}(\\|[^\\]]+)?\\]\\]`, "gi");
+	let count = 0;
+	const result = content.replace(pattern, (_match, aliasGroup) => {
+		count++;
+		return `[[${newTarget}${aliasGroup ?? ""}]]`;
+	});
+	return { content: result, count };
+}
+
+/** Sums per-file occurrence counts from Obsidian's own
+ * `metadataCache.unresolvedLinks` (sourcePath -> linkText -> count) into a
+ * single count per distinct unresolved link text across the whole vault.
+ * Pure/testable: takes the plain data structure, not the live cache. */
+export function aggregateUnresolvedLinks(unresolvedLinks: Record<string, Record<string, number>>): Map<string, number> {
+	const totals = new Map<string, number>();
+	for (const perFile of Object.values(unresolvedLinks)) {
+		for (const [linkText, count] of Object.entries(perFile)) {
+			totals.set(linkText, (totals.get(linkText) ?? 0) + count);
+		}
+	}
+	return totals;
+}
+
 const FILENAME_FORBIDDEN = /[\\/:*?"<>|]/g;
 
 function sanitizeFilename(name: string): string {
@@ -179,6 +213,20 @@ export default class LightweightMentionsPlugin extends Plugin {
 			editorCallback: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
 				if (ctx.file) void this.promoteMentionAtCursor(editor, ctx.file);
 			},
+		});
+
+		this.addCommand({
+			id: "convert-link-to-mention",
+			name: "Convert link to lightweight mention",
+			editorCallback: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+				if (ctx.file) void this.convertLinkAtCursor(editor, ctx.file);
+			},
+		});
+
+		this.addCommand({
+			id: "bulk-convert-unresolved-links",
+			name: "Convert unresolved links to lightweight mentions...",
+			callback: () => this.openBulkConvertModal(),
 		});
 
 		this.addSettingTab(new LightweightMentionsSettingTab(this.app, this));
@@ -211,11 +259,86 @@ export default class LightweightMentionsPlugin extends Plugin {
 		const stubFile = await this.getStubFile(true);
 		if (!stubFile) throw new Error("Could not create stub file");
 
+		const cache = this.app.metadataCache.getFileCache(stubFile);
+		const alreadyExists = (cache?.headings ?? []).some(
+			(h) => h.level === this.settings.stubHeadingLevel && h.heading.toLowerCase() === name.toLowerCase()
+		);
+		if (alreadyExists) return stubFile;
+
 		const level = "#".repeat(this.settings.stubHeadingLevel);
 		const content = await this.app.vault.read(stubFile);
 		const separator = content.endsWith("\n") ? "" : "\n";
 		await this.app.vault.modify(stubFile, `${content}${separator}\n${level} ${name}\n`);
 		return stubFile;
+	}
+
+	/** Rewrites every `[[oldTarget]]`/`[[oldTarget|Alias]]` across the vault to
+	 * point at `newTarget` instead. Shared by promotion (stub heading -> new
+	 * note) and unresolved-link conversion (bare link -> stub heading). */
+	async rewriteLinks(oldTarget: string, newTarget: string): Promise<number> {
+		let updated = 0;
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const content = await this.app.vault.read(file);
+			const { content: replaced, count } = rewriteLinksInContent(content, oldTarget, newTarget);
+			if (count === 0) continue;
+			updated += count;
+			await this.app.vault.modify(file, replaced);
+		}
+		return updated;
+	}
+
+	/** Converts an existing unresolved `[[Name]]` link (one that never had a
+	 * matching note) into a lightweight mention: adds/reuses a heading for it
+	 * in the stub file, then rewrites every occurrence of that link across the
+	 * vault to point at the new heading instead. */
+	async convertUnresolvedLinkToMention(linkText: string): Promise<{ stubFile: TFile; updated: number }> {
+		const stubFile = await this.addStubHeading(linkText);
+		const updated = await this.rewriteLinks(linkText, `${stubFile.basename}#${linkText}`);
+		return { stubFile, updated };
+	}
+
+	/** Runs the "Convert link to lightweight mention" command on whatever
+	 * `[[link]]` the cursor is currently inside. */
+	async convertLinkAtCursor(editor: Editor, activeFile: TFile) {
+		const cursor = editor.getCursor();
+		const link = this.findLinkUnderCursor(editor, cursor);
+		if (!link) {
+			new Notice("Place the cursor on a [[link]] first.");
+			return;
+		}
+		if (link.heading) {
+			new Notice("Links with a #heading aren't supported by this command yet.");
+			return;
+		}
+
+		const dest = this.app.metadataCache.getFirstLinkpathDest(link.path, activeFile.path);
+		if (dest) {
+			const isMention = normalizePath(dest.path) === normalizePath(this.settings.stubFilePath);
+			new Notice(isMention ? "This is already a lightweight mention." : "This link already points to an existing note.");
+			return;
+		}
+
+		const { stubFile, updated } = await this.convertUnresolvedLinkToMention(link.path);
+		new Notice(`Converted "${link.path}" to a lightweight mention in ${stubFile.basename}. Updated ${updated} link(s).`);
+	}
+
+	/** Opens a modal listing every distinct unresolved link in the vault (via
+	 * Obsidian's own metadataCache, no manual file scanning needed), letting
+	 * the user pick which ones to bulk-convert to lightweight mentions. */
+	openBulkConvertModal() {
+		const totals = aggregateUnresolvedLinks(this.app.metadataCache.unresolvedLinks);
+		const entries = Array.from(totals.entries())
+			.map(([link, count]) => ({ link, count }))
+			.sort((a, b) => b.count - a.count || a.link.localeCompare(b.link));
+
+		new BulkConvertModal(this.app, entries, async (links) => {
+			let totalOccurrences = 0;
+			for (const link of links) {
+				const { updated } = await this.convertUnresolvedLinkToMention(link);
+				totalOccurrences += updated;
+			}
+			new Notice(`Converted ${links.length} link(s) to mentions (${totalOccurrences} occurrence(s) total).`);
+		}).open();
 	}
 
 	findHeadingSection(file: TFile, headingText: string, level: number, content: string) {
@@ -347,37 +470,71 @@ export default class LightweightMentionsPlugin extends Plugin {
 		].join("\n");
 		await this.app.vault.modify(stubFile, remaining);
 
-		const updatedCount = await this.rewriteLinksToNote(stubFile, headingText, newFile);
+		const updatedCount = await this.rewriteLinks(`${stubFile.basename}#${headingText}`, newFile.basename);
 
 		new Notice(`Promoted "${headingText}" to ${newFile.basename}. Updated ${updatedCount} link(s).`);
-	}
-
-	/** Rewrites every `[[stubBasename#heading]]` (optionally with alias) link across the vault to point at `newFile`. */
-	async rewriteLinksToNote(stubFile: TFile, headingText: string, newFile: TFile): Promise<number> {
-		const stubBasename = escapeRegExp(stubFile.basename);
-		const heading = escapeRegExp(headingText);
-		const linkPattern = new RegExp(
-			`\\[\\[${stubBasename}#${heading}(\\|[^\\]]+)?\\]\\]`,
-			"gi"
-		);
-
-		let updated = 0;
-		for (const file of this.app.vault.getMarkdownFiles()) {
-			const content = await this.app.vault.read(file);
-			if (!linkPattern.test(content)) continue;
-			linkPattern.lastIndex = 0;
-			const replaced = content.replace(linkPattern, (_match, aliasGroup) => {
-				updated++;
-				return `[[${newFile.basename}${aliasGroup ?? ""}]]`;
-			});
-			await this.app.vault.modify(file, replaced);
-		}
-		return updated;
 	}
 }
 
 /** Lets the user pick one template file out of the configured template folder
  * (or none, via Esc) when promoting a mention. */
+/** Lists every unresolved link in the vault with how many times it's used,
+ * with a checkbox per entry, and bulk-converts the selected ones to
+ * lightweight mentions on confirm. */
+class BulkConvertModal extends Modal {
+	private selected: Set<string>;
+
+	constructor(
+		app: App,
+		private entries: { link: string; count: number }[],
+		private onConvert: (links: string[]) => void
+	) {
+		super(app);
+		this.selected = new Set(entries.map((e) => e.link));
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.createEl("h2", { text: "Convert unresolved links to lightweight mentions" });
+
+		if (this.entries.length === 0) {
+			contentEl.createEl("p", { text: "No unresolved links found in this vault." });
+			return;
+		}
+
+		contentEl.createEl("p", {
+			text: "All checked links will be added as headings in the stub file, and every occurrence across the vault rewritten to point at them.",
+		});
+
+		const list = contentEl.createDiv({ cls: "lightweight-mentions-bulk-list" });
+		for (const entry of this.entries) {
+			const row = list.createDiv({ cls: "lightweight-mentions-bulk-row" });
+			const checkbox = row.createEl("input", { type: "checkbox" });
+			checkbox.checked = true;
+			checkbox.addEventListener("change", () => {
+				if (checkbox.checked) this.selected.add(entry.link);
+				else this.selected.delete(entry.link);
+			});
+			row.createSpan({ text: ` ${entry.link} ` });
+			row.createSpan({
+				text: `(${entry.count} mention${entry.count === 1 ? "" : "s"})`,
+				cls: "lightweight-mentions-tag",
+			});
+		}
+
+		const buttonRow = contentEl.createDiv({ cls: "lightweight-mentions-bulk-actions" });
+		const convertBtn = buttonRow.createEl("button", { text: "Convert selected" });
+		convertBtn.addEventListener("click", () => {
+			this.onConvert(Array.from(this.selected));
+			this.close();
+		});
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
 class TemplatePickerModal extends FuzzySuggestModal<TFile> {
 	private chosen = false;
 

@@ -9,3 +9,22 @@
 	font-size: 0.75em;
 	opacity: 0.6;
 }
+
+.lightweight-mentions-bulk-list {
+	max-height: 50vh;
+	overflow-y: auto;
+	margin: 0.5em 0;
+}
+
+.lightweight-mentions-bulk-row {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	padding: 0.2em 0;
+}
+
+.lightweight-mentions-bulk-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 0.5em;
+}
