@@ -412,6 +412,32 @@ class TemplatePickerModal extends FuzzySuggestModal<TFile> {
 	}
 }
 
+export interface MentionTriggerMatch {
+	start: number;
+	query: string;
+}
+
+/** Decides whether the text before the cursor on the current line ends in an
+ * active mention trigger, and if so what the query text is. Pure/testable:
+ * takes the raw substring instead of an Editor. Guards against re-triggering
+ * on a trigger character that's part of text this plugin itself just
+ * inserted -- e.g. picking a note named "@Amato" inserts "[[@Amato]]", whose
+ * "@" would otherwise be picked up again as the start of a brand new mention
+ * (reported: https://github.com/Amato21/Lightweight-Mentions/issues/21). */
+export function findMentionTrigger(lineBeforeCursor: string, triggerChar: string): MentionTriggerMatch | null {
+	const lastTriggerIdx = lineBeforeCursor.lastIndexOf(triggerChar);
+	if (lastTriggerIdx === -1) return null;
+
+	const charBefore = lastTriggerIdx > 0 ? lineBeforeCursor[lastTriggerIdx - 1] : "";
+	if (charBefore && /[A-Za-z0-9_]/.test(charBefore)) return null;
+
+	const query = lineBeforeCursor.slice(lastTriggerIdx + triggerChar.length);
+	if (query.includes("[[") || query.includes("]]") || query.includes(triggerChar)) return null;
+	if (/\s{2,}/.test(query) || query.length > 100) return null;
+
+	return { start: lastTriggerIdx, query };
+}
+
 /** Identifies the underlying file/heading a suggestion points at, regardless
  * of which label (filename vs. one of its aliases) matched the query -- used
  * to collapse duplicate suggestions for the same target down to one. */
@@ -430,23 +456,15 @@ class MentionSuggest extends EditorSuggest<MentionSuggestion> {
 	}
 
 	onTrigger(cursor: EditorPosition, editor: Editor): EditorSuggestTriggerInfo | null {
-		const triggerChar = this.plugin.settings.triggerChar;
 		const line = editor.getLine(cursor.line);
 		const sub = line.slice(0, cursor.ch);
-		const lastTriggerIdx = sub.lastIndexOf(triggerChar);
-		if (lastTriggerIdx === -1) return null;
-
-		const charBefore = lastTriggerIdx > 0 ? sub[lastTriggerIdx - 1] : "";
-		if (charBefore && /[A-Za-z0-9_]/.test(charBefore)) return null;
-
-		const query = sub.slice(lastTriggerIdx + triggerChar.length);
-		if (query.includes("[[") || query.includes(triggerChar)) return null;
-		if (/\s{2,}/.test(query) || query.length > 100) return null;
+		const match = findMentionTrigger(sub, this.plugin.settings.triggerChar);
+		if (!match) return null;
 
 		return {
-			start: { line: cursor.line, ch: lastTriggerIdx },
+			start: { line: cursor.line, ch: match.start },
 			end: cursor,
-			query,
+			query: match.query,
 		};
 	}
 

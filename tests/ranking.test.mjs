@@ -69,8 +69,15 @@ function subsequenceFuzzy(query) {
 	};
 }
 
-const { rankCandidates, hasStrongMatch, templatesInFolder, mergeTemplateContent, parseAliases, dedupeByKey } =
-	await loadMainExports();
+const {
+	rankCandidates,
+	hasStrongMatch,
+	templatesInFolder,
+	mergeTemplateContent,
+	parseAliases,
+	dedupeByKey,
+	findMentionTrigger,
+} = await loadMainExports();
 
 function test(name, fn) {
 	try {
@@ -231,4 +238,33 @@ test("dedupeByKey keeps only the first occurrence of each key", () => {
 		result.map((i) => i.label),
 		["first", "only"]
 	);
+});
+
+test("findMentionTrigger detects a trigger at the end of the line", () => {
+	const match = findMentionTrigger("Hello @Viv", "@");
+	assert.deepEqual(match, { start: 6, query: "Viv" });
+});
+
+test("findMentionTrigger returns null when there's no trigger", () => {
+	assert.equal(findMentionTrigger("Hello world", "@"), null);
+});
+
+test("findMentionTrigger ignores a trigger glued to a preceding word character (e.g. an email)", () => {
+	assert.equal(findMentionTrigger("test@Viv", "@"), null);
+});
+
+test("findMentionTrigger does not re-trigger inside a link it just inserted (issue #21)", () => {
+	// Reported bug: picking a note named "@Amato" inserts "[[@Amato]]". The
+	// "@" inside that closed link was being picked up again as a brand new
+	// mention, because the old guard only checked for an unclosed "[[" ahead
+	// of the trigger, never a closed "]]".
+	assert.equal(findMentionTrigger("Hello [[@Amato]]", "@"), null);
+});
+
+test("findMentionTrigger stays suppressed while typing further after that link", () => {
+	assert.equal(findMentionTrigger("Hello [[@Amato]] said", "@"), null);
+});
+
+test("findMentionTrigger blocks when the query itself contains an unclosed [[", () => {
+	assert.equal(findMentionTrigger("Hello @foo [[bar", "@"), null);
 });
