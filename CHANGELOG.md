@@ -14,6 +14,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the best-ranked match is kept.
 
 ### Fixed
+- Selecting a note whose filename starts with the trigger character (e.g. a
+  note named `@Amato`) inserted the correct link but then immediately
+  reopened the suggester, because the trigger detector found the `@` inside
+  the just-inserted `[[@Amato]]` and didn't recognize it was already part of
+  a closed link. Typing further would splice new keystrokes into the link
+  instead of the document. Reported in
+  [#21](https://github.com/Amato21/Lightweight-Mentions/issues/21) with the
+  exact fix; thanks to @jlconlin for the thorough report.
 - Picking a template in the promotion picker could silently produce an empty
   note (just the mention's name, no frontmatter or template content at all),
   because the modal's `onClose()` handler could run before `onChooseItem()`
